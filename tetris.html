@@ -132,6 +132,21 @@
         .hidden { display: none !important; }
 
         h2 { font-size: 14px; margin-bottom: 20px; line-height: 1.5; }
+
+        .overlay-btns {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            width: 100%;
+            align-items: center;
+        }
+
+        .btn-overlay {
+            padding: 10px; 
+            font-size: 10px; 
+            width: 160px; 
+            height: auto;
+        }
     </style>
 </head>
 <body>
@@ -147,8 +162,10 @@
 
             <div id="overlay">
                 <h2 id="msg">AKIBA-TETRIS<br>READY?</h2>
-                <div class="btn" style="padding: 10px; font-size: 10px; width: auto;" onclick="startGame()">START</div>
-                <div id="back-btn" class="btn btn-overlay hidden" style="background-color: #444;" onclick="backToMenu()">BACK TO MENU</div>
+                <div class="overlay-btns">
+                    <div class="btn btn-overlay" onclick="startGame()">START</div>
+                    <div id="back-btn" class="btn btn-overlay hidden" style="background-color: #444;" onclick="backToMenu()">BACK TO MENU</div>
+                </div>
             </div>
         </div>
     </div>
@@ -169,6 +186,7 @@
         const context = canvas.getContext('2d');
         const scoreElement = document.getElementById('score');
         const levelElement = document.getElementById('level');
+        const msgElement = document.getElementById('msg');
         const backBtn = document.getElementById('back-btn');
 
         context.scale(20, 20);
@@ -176,8 +194,8 @@
         // --- Lógica de Repetición de Teclas (Hold functionality) ---
         const keysState = {};
         const timers = {};
-        const REPEAT_DELAY = 200; // Retraso inicial antes de repetir
-        const REPEAT_RATE = 50;   // Velocidad de repetición
+        const REPEAT_DELAY = 200; 
+        const REPEAT_RATE = 50;   
 
         function startRepeat(action, key) {
             if (timers[key]) return;
@@ -321,9 +339,11 @@
             player.pos.y = 0;
             player.pos.x = (arena[0].length / 2 | 0) - (player.matrix[0].length / 2 | 0);
             if (collide(arena, player)) {
-                document.getElementById('msg').innerHTML = "GAME OVER<br>SCORE: " + player.score;
+                msgElement.innerHTML = "GAME OVER<br>SCORE: " + player.score;
+                backBtn.classList.remove('hidden');
                 document.getElementById('overlay').classList.remove('hidden');
                 arena.forEach(row => row.fill(0));
+                if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
             }
         }
 
@@ -351,6 +371,8 @@
 
         function startGame() {
             document.getElementById('overlay').classList.add('hidden');
+            backBtn.classList.add('hidden');
+            msgElement.innerHTML = "AKIBA-TETRIS<br>READY?";
             player.score = 0;
             updateScore();
             playerReset();
@@ -358,8 +380,7 @@
         }
 
         function backToMenu() {
-            // Cambiar 'index.html' por la ruta real de tu landing page si es distinta
-            window.location.href = 'index.html'; 
+            window.location.href = 'index.html';
         }
 
         // --- Controles de Botón con Repetición ---
@@ -398,3 +419,4 @@
     </script>
 </body>
 </html>
+                                   
