@@ -209,14 +209,7 @@
     </style>
 </head>
 <body>
-    <!-- Elementos de Audio -->
-    <audio id="bgMusic" loop>
-        <source src="assets/audio/ambient_loop.mp3" type="audio/mpeg">
-    </audio>
-    <audio id="selectSound">
-        <source src="assets/audio/select.mp3" type="audio/mpeg">
-    </audio>
-    
+      
     <div class="console-container">
         <div class="screen-wrapper">
             <div class="header">
@@ -363,24 +356,10 @@
         const tg = window.Telegram.WebApp;
         tg.expand();
         tg.ready();
-        const bgMusic = document.getElementById('bgMusic');
-        const selectSound = document.getElementById('selectSound');
-        let audioStarted = false;
-
-        // Función para iniciar la música (el navegador requiere interacción previa)
-        function startExperience() {
-            if (!audioStarted) {
-                bgMusic.play().catch(e => console.log("Audio bloqueado inicialmente"));
-                audioStarted = true;
-            }
-        }
-
+        
         // Vibración al interactuar con el menú para dispositivos móviles
         document.querySelectorAll('.game-item.active').forEach(item => {
             item.addEventListener('click', () => {
-                // Reproducir sonido de selección
-                selectSound.currentTime = 0;
-                selectSound.play();
                 if (tg.HapticFeedback) {
                     tg.HapticFeedback.notificationOccurred('success');
                 }
