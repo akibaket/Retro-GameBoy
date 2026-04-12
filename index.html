@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Retro Console Hub - Akiba-OS</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+        :root {
+            --bg-dark: #0f380f;
+            --screen-green: #9bbc0f;
+            --text-dark: #0f380f;
+            --accent-green: #306230;
+            --font-main: 'Press Start 2P', cursive;
+        }
+
+        * {
+            box-sizing: border-box;
+            image-rendering: pixelated;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background-color: #121212;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            font-family: var(--font-main);
+            color: var(--text-dark);
+            overflow: hidden;
+        }
+
+        /* Contenedor Externo de la Consola */
+        .console-container {
+            width: 95vw;
+            max-width: 420px;
+            height: 85vh;
+            background-color: #333;
+            border: 10px solid #222;
+            border-bottom-width: 25px;
+            border-radius: 15px;
+            position: relative;
+            padding: 15px;
+            box-shadow: 0 20px 0 #000;
+        }
+
+        /* Área de la Pantalla */
+        .screen-wrapper {
+            background-color: var(--screen-green);
+            width: 100%;
+            height: 100%;
+            border: 4px solid var(--text-dark);
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Efecto CRT Scanlines */
+        .screen-wrapper::after {
+            content: " ";
+            display: block;
+            position: absolute;
+            top: 0; left: 0; bottom: 0; right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.05) 50%), 
+                        linear-gradient(90deg, rgba(255, 0, 0, 0.02), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.02));
+            z-index: 10;
+            background-size: 100% 3px, 3px 100%;
+            pointer-events: none;
+        }
+
+        .header {
+            text-align: center;
+            border-bottom: 4px double var(--text-dark);
+            padding: 15px 10px;
+            background-color: var(--screen-green);
+            z-index: 5;
+        }
+
+        .header h1 {
+            font-size: 16px;
+            margin: 0;
+            letter-spacing: 1px;
+        }
+
+        .header p {
+            font-size: 8px;
+            margin: 8px 0 0 0;
+            opacity: 0.8;
+        }
+
+        /* Área con Scroll */
+        .scroll-area {
+            flex: 1;
+            overflow-y: scroll;
+            padding: 10px;
+            padding-bottom: 40px; /* Espacio para el footer */
+        }
+
+        /* Estilo del Scrollbar Retro */
+        .scroll-area::-webkit-scrollbar {
+            width: 12px;
+        }
+        .scroll-area::-webkit-scrollbar-track {
+            background: var(--accent-green);
+            border-left: 2px solid var(--text-dark);
+        }
+        .scroll-area::-webkit-scrollbar-thumb {
+            background: var(--text-dark);
+            border: 2px solid var(--screen-green);
+        }
+
+        .game-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .game-item {
+            display: flex;
+            align-items: center;
+            padding: 12px;
+            text-decoration: none;
+            color: inherit;
+            border: 2px solid transparent;
+            background: rgba(0,0,0,0.05);
+        }
+
+        .game-item.active:active, .game-item.active:hover {
+            background-color: var(--text-dark);
+            color: var(--screen-green);
+            border: 2px solid var(--screen-green);
+        }
+
+        .game-number {
+            font-size: 10px;
+            width: 35px;
+            flex-shrink: 0;
+        }
+
+        .icon {
+            width: 24px;
+            height: 24px;
+            margin-right: 12px;
+            fill: currentColor;
+        }
+
+        .game-info {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .game-title {
+            font-size: 10px;
+            font-weight: bold;
+        }
+
+        .game-status {
+            font-size: 7px;
+            text-transform: uppercase;
+        }
+
+        .locked {
+            opacity: 0.4;
+            filter: grayscale(1);
+            cursor: not-allowed;
+        }
+
+        .footer {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            background: var(--screen-green);
+            border-top: 2px solid var(--text-dark);
+            padding: 8px;
+            text-align: center;
+            font-size: 8px;
+            z-index: 5;
+        }
+
+        .blink {
+            animation: blinker 0.8s step-start infinite;
+        }
+
+        @keyframes blinker {
+            50% { opacity: 0; }
+        }
+
+        /* Decoración de la Consola */
+        .buttons {
+            position: absolute;
+            bottom: -18px;
+            right: 20px;
+            display: flex;
+            gap: 10px;
+        }
+        .dot {
+            width: 8px;
+            height: 8px;
+            background: #111;
+            border-radius: 50%;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="console-container">
+        <div class="screen-wrapper">
+            <div class="header">
+                <h1>AKIBA-OS v1.1</h1>
+                <p>--- MENU PRINCIPAL ---</p>
+            </div>
+
+            <div class="scroll-area">
+                <nav class="game-list">
+                    <!-- 01: Tetris -->
+                    <a href="https://akibaket.github.io/Tetris-Test/" class="game-item active">
+                        <span class="game-number">01.</span>
+                        <svg class="icon" viewBox="0 0 24 24">
+                            <path d="M11,3H13V5H15V7H13V9H11V7H9V5H11V3M7,11H9V13H11V15H9V17H7V15H5V13H7V11M15,11H17V13H19V15H17V17H15V15H13V13H15V11M11,19H13V21H11V19Z" />
+                        </svg>
+                        <div class="game-info">
+                            <span class="game-title">TETRIS RETRO</span>
+                            <span class="game-status">Estado: ONLINE</span>
+                        </div>
+                    </a>
+
+                    <!-- Generación de espacios vacíos 02-10 -->
+                    <div class="game-item locked">
+                        <span class="game-number">02.</span>
+                        <div class="game-info">
+                            <span class="game-title">PRÓXIMAMENTE</span>
+                            <span class="game-status">Estado: BLOQUEADO</span>
+                        </div>
+                    </div>
+
+                    <div class="game-item locked">
+                        <span class="game-number">03.</span>
+                        <div class="game-info">
+                            <span class="game-title">PRÓXIMAMENTE</span>
+                            <span class="game-status">Estado: BLOQUEADO</span>
+                        </div>
+                    </div>
+
+                    <div class="game-item locked">
+                        <span class="game-number">04.</span>
+                        <div class="game-info">
+                            <span class="game-title">PRÓXIMAMENTE</span>
+                            <span class="game-status">Estado: BLOQUEADO</span>
+                        </div>
+                    </div>
+
+                    <div class="game-item locked">
+                        <span class="game-number">05.</span>
+                        <div class="game-info">
+                            <span class="game-title">PRÓXIMAMENTE</span>
+                            <span class="game-status">Estado: BLOQUEADO</span>
+                        </div>
+                    </div>
+
+                    <div class="game-item locked">
+                        <span class="game-number">06.</span>
+                        <div class="game-info">
+                            <span class="game-title">PRÓXIMAMENTE</span>
+                            <span class="game-status">Estado: BLOQUEADO</span>
+                        </div>
+                    </div>
+
+                    <div class="game-item locked">
+                        <span class="game-number">07.</span>
+                        <div class="game-info">
+                            <span class="game-title">PRÓXIMAMENTE</span>
+                            <span class="game-status">Estado: BLOQUEADO</span>
+                        </div>
+                    </div>
+
+                    <div class="game-item locked">
+                        <span class="game-number">08.</span>
+                        <div class="game-info">
+                            <span class="game-title">PRÓXIMAMENTE</span>
+                            <span class="game-status">Estado: BLOQUEADO</span>
+                        </div>
+                    </div>
+
+                    <div class="game-item locked">
+                        <span class="game-number">09.</span>
+                        <div class="game-info">
+                            <span class="game-title">PRÓXIMAMENTE</span>
+                            <span class="game-status">Estado: BLOQUEADO</span>
+                        </div>
+                    </div>
+
+                    <div class="game-item locked">
+                        <span class="game-number">10.</span>
+                        <div class="game-info">
+                            <span class="game-title">SISTEMA FINAL</span>
+                            <span class="game-status">Estado: BLOQUEADO</span>
+                        </div>
+                    </div>
+                </nav>
+            </div>
+
+            <div class="footer">
+                <span class="blink">>>></span> SELECCIONA UN JUEGO <span class="blink"><<<</span>
+            </div>
+        </div>
+        
+        <div class="buttons">
+            <div class="dot"></div>
+            <div class="dot"></div>
+        </div>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        tg.ready();
+
+        // Vibración al interactuar con el menú para dispositivos móviles
+        document.querySelectorAll('.game-item.active').forEach(item => {
+            item.addEventListener('click', () => {
+                if (tg.HapticFeedback) {
+                    tg.HapticFeedback.notificationOccurred('success');
+                }
+            });
+        });
+    </script>
+</body>
+</html>
