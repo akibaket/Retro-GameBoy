@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Akiba Memory - Akiba-OS</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+        :root {
+            --bg-dark: #0f380f;
+            --screen-green: #9bbc0f;
+            --text-dark: #0f380f;
+            --accent-green: #306230;
+            --font-main: 'Press Start 2P', cursive;
+        }
+
+        * {
+            box-sizing: border-box;
+            image-rendering: pixelated;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+
+        body {
+            background-color: #121212;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            font-family: var(--font-main);
+            color: var(--text-dark);
+            overflow: hidden;
+            touch-action: none;
+        }
+
+        .console-frame {
+            background-color: #333;
+            border: 8px solid #222;
+            border-radius: 15px;
+            padding: 10px;
+            box-shadow: 0 10px 0 #000;
+            position: relative;
+        }
+
+        .screen {
+            background-color: var(--screen-green);
+            border: 4px solid var(--text-dark);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 280px;
+            height: 400px;
+        }
+
+        .screen::after {
+            content: "";
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.05) 50%);
+            background-size: 100% 3px;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        .hud {
+            width: 100%;
+            padding: 8px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            font-size: 8px;
+            border-bottom: 2px solid var(--text-dark);
+            background: var(--screen-green);
+            z-index: 5;
+            gap: 5px;
+        }
+
+        .grid {
+            display: grid;
+            gap: 6px;
+            padding: 10px;
+            width: 100%;
+            height: 100%;
+            align-content: center;
+            justify-content: center;
+        }
+
+        .card {
+            aspect-ratio: 1;
+            background-color: var(--accent-green);
+            border: 2px solid var(--text-dark);
+            position: relative;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.1s;
+        }
+
+        .card.flipped {
+            background-color: #8bab0e;
+        }
+
+        .card.matched {
+            visibility: hidden;
+        }
+
+        .icon {
+            display: none;
+            width: 80%;
+            height: 80%;
+        }
+
+        .card.flipped .icon {
+            display: block;
+        }
+
+        #overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--screen-green);
+            z-index: 20;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .hidden { display: none !important; }
+        h2 { font-size: 10px; margin-bottom: 20px; line-height: 1.6; }
+
+        .btn-overlay {
+            padding: 12px; 
+            font-size: 10px; 
+            width: 180px; 
+            color: #eee;
+            background-color: #222;
+            border: 4px solid #444;
+            border-radius: 10px;
+            font-family: var(--font-main);
+            cursor: pointer;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="console-frame">
+        <div class="screen">
+            <div class="hud">
+                <div>LEVEL: <span id="level">1</span></div>
+                <div>TIME: <span id="timer">60</span>s</div>
+                <div>PAREJAS: <span id="matches">0/2</span></div>
+                <div>TRIES: <span id="tries">00</span></div>
+            </div>
+
+            <div id="game-grid" class="grid"></div>
+
+            <div id="overlay">
+                <h2 id="msg">SISTEMA DE MEMORIA<br>AKIBA-OS v2.0</h2>
+                <div class="overlay-btns">
+                    <div id="start-btn" class="btn-overlay" onclick="startNewLevel()">INICIAR ESCANEO</div>
+                    <div id="back-btn" class="btn-overlay hidden" style="background-color: #444;" onclick="backToMenu()">VOLVER AL MENU</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        tg.ready();
+
+        const gridEl = document.getElementById('game-grid');
+        const matchesEl = document.getElementById('matches');
+        const triesEl = document.getElementById('tries');
+        const levelEl = document.getElementById('level');
+        const timerEl = document.getElementById('timer');
+        const msgEl = document.getElementById('msg');
+        const backBtn = document.getElementById('back-btn');
+        const startBtn = document.getElementById('start-btn');
+        const overlay = document.getElementById('overlay');
+
+        let currentLevel = 1;
+        let timeLeft = 60;
+        let timerInterval = null;
+        let flippedCards = [];
+        let matchesFound = 0;
+        let totalMatchesNeeded = 2;
+        let tries = 0;
+        let lockBoard = false;
+
+        const icons = [
+            `<svg viewBox="0 0 8 8" fill="#0f380f"><rect x="1" y="1" width="2" height="2"/><rect x="5" y="1" width="2" height="2"/><rect x="1" y="4" width="6" height="3"/></svg>`,
+            `<svg viewBox="0 0 8 8" fill="#0f380f"><rect x="3" y="1" width="2" height="6"/><rect x="1" y="3" width="6" height="2"/></svg>`,
+            `<svg viewBox="0 0 8 8" fill="#0f380f"><rect x="2" y="2" width="4" height="4"/></svg>`,
+            `<svg viewBox="0 0 8 8" fill="#0f380f"><path d="M2 2h1v1H2zM5 2h1v1H5zM1 4h6v1H1z"/></svg>`,
+            `<svg viewBox="0 0 8 8" fill="#0f380f"><rect x="1" y="2" width="6" height="4"/><rect x="3" y="1" width="2" height="6"/></svg>`,
+            `<svg viewBox="0 0 8 8" fill="#0f380f"><rect x="2" y="1" width="1" height="6"/><rect x="5" y="1" width="1" height="6"/></svg>`,
+            `<svg viewBox="0 0 8 8" fill="#0f380f"><path d="M1 1h2v2H1zM5 1h2v2H5zM1 5h2v2H1zM5 5h2v2H5z"/></svg>`,
+            `<svg viewBox="0 0 8 8" fill="#0f380f"><rect x="1" y="1" width="6" height="1"/><rect x="1" y="6" width="6" height="1"/><rect x="3" y="3" width="2" height="2"/></svg>`,
+            `<svg viewBox="0 0 8 8" fill="#0f380f"><path d="M4 1L1 7h6z"/></svg>`,
+            `<svg viewBox="0 0 8 8" fill="#0f380f"><circle cx="4" cy="4" r="3"/></svg>`,
+            `<svg viewBox="0 0 8 8" fill="#0f380f"><rect x="1" y="1" width="2" height="2"/><rect x="5" y="5" width="2" height="2"/></svg>`,
+            `<svg viewBox="0 0 8 8" fill="#0f380f"><path d="M1 1l6 6M7 1L1 7" stroke="#0f380f" stroke-width="1"/></svg>`,
+            `<svg viewBox="0 0 8 8" fill="#0f380f"><rect x="0" y="3" width="8" height="2"/></svg>`,
+            `<svg viewBox="0 0 8 8" fill="#0f380f"><path d="M4 0v8M0 4h8" stroke="#0f380f" stroke-width="1"/></svg>`,
+            `<svg viewBox="0 0 8 8" fill="#0f380f"><rect x="2" y="0" width="4" height="2"/><rect x="2" y="6" width="4" height="2"/></svg>`,
+            `<svg viewBox="0 0 8 8" fill="#0f380f"><rect x="0" y="2" width="2" height="4"/><rect x="6" y="2" width="2" height="4"/></svg>`,
+            `<svg viewBox="0 0 8 8" fill="#0f380f"><path d="M2 1h4v1H2zM1 2h6v4H1zM2 6h4v1H2z"/></svg>`,
+            `<svg viewBox="0 0 8 8" fill="#0f380f"><path d="M0 0h1v1H0zM7 7h1v1H7zM0 7h1v1H0zM7 0h1v1H7z"/></svg>`
+        ];
+
+        function startTimer() {
+            clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                timerEl.innerText = timeLeft;
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    gameOver();
+                }
+            }, 1000);
+        }
+
+        function flipCard() {
+            if (lockBoard || this.classList.contains('flipped') || this.classList.contains('matched')) return;
+
+            this.classList.add('flipped');
+            flippedCards.push(this);
+
+            if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+
+            if (flippedCards.length === 2) {
+                tries++;
+                triesEl.innerText = tries.toString().padStart(2, '0');
+                checkMatch();
+            }
+        }
+
+        function checkMatch() {
+            lockBoard = true;
+            const [card1, card2] = flippedCards;
+            const isMatch = card1.dataset.pairId === card2.dataset.pairId;
+
+            if (isMatch) {
+                setTimeout(() => {
+                    card1.classList.add('matched');
+                    card2.classList.add('matched');
+                    matchesFound++;
+                    matchesEl.innerText = `${matchesFound}/${totalMatchesNeeded}`;
+                    if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+                    resetFlipped();
+                    if (matchesFound === totalMatchesNeeded) levelComplete();
+                }, 400);
+            } else {
+                setTimeout(() => {
+                    card1.classList.remove('flipped');
+                    card2.classList.remove('flipped');
+                    resetFlipped();
+                }, 800);
+            }
+        }
+
+        function resetFlipped() {
+            flippedCards = [];
+            lockBoard = false;
+        }
+
+        function startNewLevel() {
+            overlay.classList.add('hidden');
+            backBtn.classList.add('hidden');
+            gridEl.innerHTML = '';
+            matchesFound = 0;
+            flippedCards = [];
+            lockBoard = false;
+
+            // Configuración dificultad
+            let cols, rows;
+            if (currentLevel === 1) { cols = 2; rows = 2; }
+            else if (currentLevel === 2) { cols = 4; rows = 3; }
+            else if (currentLevel === 3) { cols = 4; rows = 4; }
+            else { cols = 6; rows = 5; } // Nivel 4+
+
+            totalMatchesNeeded = (cols * rows) / 2;
+            gridEl.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+            
+            // Ajuste de tamaño de fuente hud si hay mucho contenido
+            matchesEl.innerText = `${matchesFound}/${totalMatchesNeeded}`;
+            levelEl.innerText = currentLevel;
+
+            // Selección de iconos y duplicación
+            const selectedIcons = icons.slice(0, totalMatchesNeeded);
+            let deck = [];
+            selectedIcons.forEach((svg, index) => {
+                deck.push({ id: index, content: svg });
+                deck.push({ id: index, content: svg });
+            });
+
+            // Barajar
+            deck.sort(() => Math.random() - 0.5);
+
+            // Crear DOM
+            deck.forEach(item => {
+                const card = document.createElement('div');
+                card.classList.add('card');
+                card.dataset.pairId = item.id;
+                card.innerHTML = `<div class="icon">${item.content}</div>`;
+                card.addEventListener('click', flipCard);
+                gridEl.appendChild(card);
+            });
+
+            timeLeft = 60 + (currentLevel * 10); // Más tiempo por nivel
+            timerEl.innerText = timeLeft;
+            startTimer();
+        }
+
+        function levelComplete() {
+            clearInterval(timerInterval);
+            currentLevel++;
+            msgEl.innerHTML = `SINCERIZACIÓN EXITOSA<br>NIVEL ${currentLevel - 1} COMPLETADO`;
+            startBtn.innerText = "SIGUIENTE NIVEL";
+            backBtn.classList.remove('hidden');
+            overlay.classList.remove('hidden');
+            if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+        }
+
+        function gameOver() {
+            gameActive = false;
+            msgEl.innerHTML = "TIEMPO AGOTADO<br>SISTEMA BLOQUEADO";
+            startBtn.innerText = "REINTENTAR";
+            currentLevel = 1; // Reinicia progreso
+            backBtn.classList.remove('hidden');
+            overlay.classList.remove('hidden');
+            if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
+        }
+
+        function backToMenu() {
+            window.location.href = 'index.html';
+        }
+
+    </script>
+</body>
+</html>
