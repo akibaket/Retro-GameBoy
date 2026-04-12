@@ -148,6 +148,7 @@
             <div id="overlay">
                 <h2 id="msg">AKIBA-TETRIS<br>READY?</h2>
                 <div class="btn" style="padding: 10px; font-size: 10px; width: auto;" onclick="startGame()">START</div>
+                <div id="back-btn" class="btn btn-overlay hidden" style="background-color: #444;" onclick="backToMenu()">BACK TO MENU</div>
             </div>
         </div>
     </div>
@@ -168,6 +169,7 @@
         const context = canvas.getContext('2d');
         const scoreElement = document.getElementById('score');
         const levelElement = document.getElementById('level');
+        const backBtn = document.getElementById('back-btn');
 
         context.scale(20, 20);
 
@@ -353,6 +355,11 @@
             updateScore();
             playerReset();
             update();
+        }
+
+        function backToMenu() {
+            // Cambiar 'index.html' por la ruta real de tu landing page si es distinta
+            window.location.href = 'index.html'; 
         }
 
         // --- Controles de Botón con Repetición ---
