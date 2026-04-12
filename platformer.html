@@ -68,7 +68,7 @@
 
         .hud {
             width: 100%;
-            padding: 6px;
+            padding: 8px;
             display: flex;
             justify-content: space-between;
             font-size: 8px;
@@ -151,8 +151,8 @@
     <div class="console-frame">
         <div class="screen">
             <div class="hud">
-                <div>DATA: <span id="score">0</span>/3</div>
-                <div>SEC: <span id="level">1</span></div>
+                <div>SCORE: <span id="score">0</span></div>
+                <div>LEVEL: <span id="level">1</span></div>
             </div>
             <canvas id="gameCanvas" width="320" height="280"></canvas>
             <div id="overlay">
@@ -186,10 +186,10 @@
 
         let gameActive = false;
         let score = 0;
+        let itemsCollectedCount = 0;
         let level = 1;
-        let reqScore = 3;
+        let reqItems = 3;
 
-        // Propiedades de la Cámara
         const camera = {
             x: 0,
             y: 0,
@@ -200,13 +200,14 @@
         const player = {
             x: 50,
             y: 150,
+            oldY: 150,
             w: 16,
             h: 20,
             vx: 0,
             vy: 0,
-            speed: 3,
-            jumpPower: -8.5,
-            gravity: 0.45,
+            speed: 3.2, // Ligera mejora de velocidad
+            jumpPower: -8.5, // Salto ajustado
+            gravity: 0.4, // Menos gravedad = más control
             grounded: false
         };
 
@@ -217,13 +218,14 @@
         let worldWidth = 320;
 
         function initLevel() {
-            score = 0;
-            reqScore = 3 + Math.floor(level / 2);
-            scoreEl.innerText = `0/${reqScore}`;
+            itemsCollectedCount = 0;
+            reqItems = 3 + Math.floor(level / 2);
+            scoreEl.innerText = score;
             levelEl.innerText = level;
             
             player.x = 50;
             player.y = 100;
+            player.oldY = 100;
             player.vx = 0;
             player.vy = 0;
             camera.x = 0;
@@ -231,38 +233,56 @@
             platforms = [];
             items = [];
             
-            // Generación Procedural
             let currentX = 0;
             let currentY = 220;
-            worldWidth = 400 + (level * 200); // El mundo crece cada nivel
+            worldWidth = 450 + (level * 250);
 
-            // Plataforma inicial segura
-            platforms.push({ x: 0, y: 220, w: 120, h: 60 });
+            // Inicio seguro
+            platforms.push({ x: 0, y: 220, w: 120, h: 60, type: 'solid' });
             currentX = 120;
 
-            while (currentX < worldWidth - 100) {
-                // Gap (hueco)
-                let gap = 40 + Math.random() * 50 + (level * 2);
-                if (gap > 110) gap = 110; 
+            while (currentX < worldWidth - 120) {
+                // Gap más pequeño para reducir dificultad
+                let gap = 40 + Math.random() * 50 + (level * 1.5);
+                if (gap > 105) gap = 105; 
                 currentX += gap;
 
-                // Nueva plataforma
-                let platW = 40 + Math.random() * 60;
-                // Variación de altura
+                let platW = 50 + Math.random() * 60;
                 let diffY = (Math.random() - 0.5) * 60;
                 currentY += diffY;
                 
-                // Limitar altura para que sea alcanzable
-                if (currentY < 80) currentY = 80;
+                if (currentY < 130) currentY = 130;
                 if (currentY > 240) currentY = 240;
 
-                platforms.push({ x: currentX, y: currentY, w: platW, h: 100 });
+                // Plataforma principal
+                const mainPlat = { x: currentX, y: currentY, w: platW, h: 100, type: 'solid' };
+                platforms.push(mainPlat);
 
-                // Colocar item en la plataforma aleatoriamente
-                if (items.length < reqScore && Math.random() > 0.3) {
+                // Plataforma flotante con altura controlada (Accesible)
+                if (Math.random() > 0.4) {
+                    const floatW = 35 + Math.random() * 25;
+                    // Siempre a una altura saltable desde la plataforma actual
+                    const floatY = currentY - 55 - Math.random() * 20; 
+                    const floatX = currentX + (platW / 2) - (floatW / 2);
+                    
+                    const floatPlat = { x: floatX, y: floatY, w: floatW, h: 8, type: 'floating' };
+                    platforms.push(floatPlat);
+
+                    // Poner item en la flotante
+                    if (items.length < reqItems) {
+                        items.push({
+                            x: floatX + (floatW / 2) - 5,
+                            y: floatY - 22,
+                            w: 10,
+                            h: 10,
+                            collected: false
+                        });
+                    }
+                } else if (items.length < reqItems) {
+                    // Poner item en la base si no hay flotante
                     items.push({
                         x: currentX + (platW / 2) - 5,
-                        y: currentY - 25,
+                        y: currentY - 22,
                         w: 10,
                         h: 10,
                         collected: false
@@ -272,8 +292,8 @@
                 currentX += platW;
             }
 
-            // Asegurar que hay suficientes items si la generación falló
-            while(items.length < reqScore) {
+            // Fallback para items
+            while(items.length < reqItems) {
                 let p = platforms[Math.floor(Math.random() * platforms.length)];
                 items.push({
                     x: p.x + (p.w/2) - 5,
@@ -284,67 +304,58 @@
                 });
             }
 
-            // Plataforma final y Salida
-            platforms.push({ x: currentX + 40, y: currentY, w: 100, h: 100 });
+            platforms.push({ x: currentX + 40, y: currentY, w: 100, h: 100, type: 'solid' });
             exit = { x: currentX + 80, y: currentY - 32, w: 24, h: 32, active: false };
         }
 
         function update() {
             if(!gameActive) return;
 
-            // Movimiento lateral
+            player.oldY = player.y;
+
             if(keys.left) player.vx = -player.speed;
             else if(keys.right) player.vx = player.speed;
-            else player.vx *= 0.8;
+            else player.vx *= 0.85;
 
             player.vy += player.gravity;
             player.x += player.vx;
             player.y += player.vy;
 
-            // Cámara sigue al jugador
-            // Mantener al jugador centrado pero con límites del mundo
-            let targetCamX = player.x - canvas.width / 2;
+            let targetCamX = player.x - canvas.width / 2.5;
             if (targetCamX < 0) targetCamX = 0;
             if (targetCamX > worldWidth + 140 - canvas.width) targetCamX = worldWidth + 140 - canvas.width;
-            
-            // Suavizado de cámara (Lerp)
-            camera.x += (targetCamX - camera.x) * 0.1;
+            camera.x += (targetCamX - camera.x) * 0.12;
 
-            // Colisiones con bordes del mundo
             if(player.x < 0) player.x = 0;
-
-            // Caída al vacío
-            if(player.y > canvas.height + 50) {
-                die();
-            }
+            if(player.y > canvas.height + 50) die();
 
             player.grounded = false;
             platforms.forEach(p => {
-                // Solo calcular colisiones de plataformas cerca del jugador
                 if (player.x + player.w > p.x && player.x < p.x + p.w) {
-                    if(player.y + player.h > p.y && player.y + player.h < p.y + p.h &&
-                       player.vy >= 0) {
-                        player.grounded = true;
-                        player.vy = 0;
-                        player.y = p.y - player.h;
+                    if (player.y + player.h > p.y && player.y + player.h < p.y + p.h) {
+                        // Tolerancia de física mejorada
+                        if (player.oldY + player.h <= p.y + 5) { 
+                            player.grounded = true;
+                            player.vy = 0;
+                            player.y = p.y - player.h;
+                        }
                     }
                 }
             });
 
-            // Recolectar items
             items.forEach(item => {
                 if(!item.collected && 
                    player.x < item.x + item.w && player.x + player.w > item.x &&
                    player.y < item.y + item.h && player.y + player.h > item.y) {
                     item.collected = true;
-                    score++;
-                    scoreEl.innerText = `${score}/${reqScore}`;
+                    itemsCollectedCount++;
+                    score += (10 * level);
+                    scoreEl.innerText = score;
                     if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
-                    if(score >= reqScore) exit.active = true;
+                    if(itemsCollectedCount >= reqItems) exit.active = true;
                 }
             });
 
-            // Salida
             if(exit.active && 
                player.x < exit.x + exit.w && player.x + player.w > exit.x &&
                player.y < exit.y + exit.h && player.y + player.h > exit.y) {
@@ -361,51 +372,51 @@
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
             ctx.save();
-            // Aplicar traslación de cámara
             ctx.translate(-camera.x, 0);
 
-            // Decoración de fondo procedural (bits flotando)
             ctx.fillStyle = '#9bbc0f';
-            for(let i=0; i < worldWidth; i+=100) {
-                ctx.fillText("01", i + 20, 50);
-                ctx.fillText("10", i + 80, 150);
+            for(let i=0; i < worldWidth; i+=140) {
+                ctx.fillText("01", i + 10, 40);
+                ctx.fillText("11", i + 100, 180);
             }
 
-            // Plataformas
-            ctx.fillStyle = '#306230';
             platforms.forEach(p => {
-                // Solo dibujar si es visible en pantalla
                 if (p.x + p.w > camera.x && p.x < camera.x + canvas.width) {
-                    ctx.fillRect(p.x, p.y, p.w, p.h);
-                    ctx.strokeStyle = '#0f380f';
-                    ctx.lineWidth = 2;
-                    ctx.strokeRect(p.x, p.y, p.w, p.h);
+                    if (p.type === 'solid') {
+                        ctx.fillStyle = '#306230';
+                        ctx.fillRect(p.x, p.y, p.w, p.h);
+                        ctx.strokeStyle = '#0f380f';
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(p.x, p.y, p.w, p.h);
+                    } else {
+                        ctx.fillStyle = '#0f380f';
+                        ctx.fillRect(p.x, p.y, p.w, p.h);
+                        ctx.fillStyle = '#306230';
+                        ctx.fillRect(p.x + 1, p.y + 1, p.w - 2, p.h - 2);
+                    }
                 }
             });
 
-            // Items
             items.forEach(item => {
                 if(!item.collected && item.x + item.w > camera.x && item.x < camera.x + canvas.width) {
                     ctx.fillStyle = '#0f380f';
-                    ctx.fillRect(item.x, item.y, item.w, item.h);
+                    ctx.beginPath();
+                    ctx.arc(item.x + 5, item.y + 5, 5, 0, Math.PI * 2);
+                    ctx.fill();
                     ctx.fillStyle = '#9bbc0f';
-                    ctx.fillRect(item.x+2, item.y+2, 3, 3);
+                    ctx.fillRect(item.x+3, item.y+3, 2, 2);
                 }
             });
 
-            // Puerta de salida
             if(exit.active) {
                 ctx.fillStyle = '#0f380f';
                 ctx.fillRect(exit.x, exit.y, exit.w, exit.h);
-                // Luz de la puerta
-                ctx.fillStyle = (Date.now() % 500 > 250) ? '#9bbc0f' : '#306230';
+                ctx.fillStyle = (Date.now() % 600 > 300) ? '#9bbc0f' : '#306230';
                 ctx.fillRect(exit.x+4, exit.y+4, exit.w-8, exit.h-8);
             }
 
-            // Jugador
             ctx.fillStyle = '#0f380f';
             ctx.fillRect(player.x, player.y, player.w, player.h);
-            // Detalles del personaje (ojos/visor)
             ctx.fillStyle = '#9bbc0f';
             let eyeX = player.vx >= 0 ? player.x + 10 : player.x + 2;
             ctx.fillRect(eyeX, player.y + 4, 4, 4);
@@ -429,7 +440,7 @@
 
         function die() {
             gameActive = false;
-            msgEl.innerHTML = "MEMORIA CORRUPTA<br>ERROR EN NIVEL " + level;
+            msgEl.innerHTML = "SISTEMA CAÍDO<br>NIVEL ALCANZADO: " + level;
             backBtn.classList.remove('hidden');
             overlay.classList.remove('hidden');
             if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
@@ -438,17 +449,16 @@
         function startGame() {
             overlay.classList.add('hidden');
             level = 1;
+            score = 0;
             initLevel();
             gameActive = true;
             update();
         }
 
         function backToMenu() {
-            // Regresar al hub principal
             window.location.href = 'index.html';
         }
 
-        // Configuración de controles táctiles mejorada
         const setupBtn = (id, type) => {
             const el = document.getElementById(id);
             const start = (e) => { 
@@ -480,7 +490,6 @@
             if(e.key === 'ArrowRight') keys.right = false;
         });
 
-        // Loop inicial de dibujo
         draw();
     </script>
 </body>
