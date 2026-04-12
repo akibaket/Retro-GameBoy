@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Akiba Platformer - Akiba-OS</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+        :root {
+            --bg-dark: #0f380f;
+            --screen-green: #9bbc0f;
+            --text-dark: #0f380f;
+            --accent-green: #306230;
+            --font-main: 'Press Start 2P', cursive;
+        }
+
+        * {
+            box-sizing: border-box;
+            image-rendering: pixelated;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+
+        body {
+            background-color: #121212;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            font-family: var(--font-main);
+            color: var(--text-dark);
+            overflow: hidden;
+            touch-action: none;
+        }
+
+        .console-frame {
+            background-color: #333;
+            border: 8px solid #222;
+            border-radius: 15px;
+            padding: 10px;
+            box-shadow: 0 10px 0 #000;
+        }
+
+        .screen {
+            background-color: var(--screen-green);
+            border: 4px solid var(--text-dark);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            width: 320px;
+            height: 320px;
+        }
+
+        .screen::after {
+            content: "";
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.05) 50%);
+            background-size: 100% 3px;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        .hud {
+            width: 100%;
+            padding: 6px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 8px;
+            border-bottom: 2px solid var(--text-dark);
+            background: var(--screen-green);
+            z-index: 5;
+        }
+
+        canvas { display: block; background-color: #8bab0e; }
+
+        .controls {
+            margin-top: 15px;
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+
+        .dpad {
+            display: flex;
+            gap: 8px;
+        }
+
+        .btn-action {
+            width: 54px;
+            height: 54px;
+            background: #222;
+            border: 4px solid #444;
+            color: #eee;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            border-radius: 10px;
+            box-shadow: 0 4px 0 #000;
+        }
+
+        .btn-action:active {
+            transform: translateY(2px);
+            box-shadow: 0 2px 0 #000;
+            background: #111;
+        }
+
+        .btn-round {
+            border-radius: 50%;
+            width: 75px;
+            height: 65px;
+            background: #a00;
+            border-color: #600;
+            font-size: 10px;
+        }
+
+        #overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--screen-green);
+            z-index: 20;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .hidden { display: none !important; }
+        h2 { font-size: 10px; margin-bottom: 10px; }
+        p { font-size: 7px; line-height: 1.5; margin-bottom: 15px; }
+
+        .btn-menu {
+            padding: 10px; font-size: 9px; width: 150px;
+            color: #eee; background: #222; border: 4px solid #444;
+            border-radius: 8px; font-family: var(--font-main);
+            margin-top: 10px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="console-frame">
+        <div class="screen">
+            <div class="hud">
+                <div>DATA: <span id="score">0</span>/3</div>
+                <div>SEC: <span id="level">1</span></div>
+            </div>
+            <canvas id="gameCanvas" width="320" height="280"></canvas>
+            <div id="overlay">
+                <h2 id="msg">AKIBA PLATFORMER</h2>
+                <p>NIVELES GENERADOS<br>POR CÓDIGO PROCEDURAL</p>
+                <div class="btn-menu" onclick="startGame()">INICIAR</div>
+                <div id="back-btn" class="btn-menu hidden" style="background-color: #444;" onclick="backToMenu()">MENU</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="controls">
+        <div class="dpad">
+            <div class="btn-action" id="left">←</div>
+            <div class="btn-action" id="right">→</div>
+        </div>
+        <div class="btn-action btn-round" id="jump">SALTAR</div>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreEl = document.getElementById('score');
+        const levelEl = document.getElementById('level');
+        const msgEl = document.getElementById('msg');
+        const overlay = document.getElementById('overlay');
+        const backBtn = document.getElementById('back-btn');
+
+        let gameActive = false;
+        let score = 0;
+        let level = 1;
+        let reqScore = 3;
+
+        // Propiedades de la Cámara
+        const camera = {
+            x: 0,
+            y: 0,
+            width: canvas.width,
+            height: canvas.height
+        };
+
+        const player = {
+            x: 50,
+            y: 150,
+            w: 16,
+            h: 20,
+            vx: 0,
+            vy: 0,
+            speed: 3,
+            jumpPower: -8.5,
+            gravity: 0.45,
+            grounded: false
+        };
+
+        let keys = { left: false, right: false };
+        let platforms = [];
+        let items = [];
+        let exit = { x: 0, y: 0, w: 24, h: 32, active: false };
+        let worldWidth = 320;
+
+        function initLevel() {
+            score = 0;
+            reqScore = 3 + Math.floor(level / 2);
+            scoreEl.innerText = `0/${reqScore}`;
+            levelEl.innerText = level;
+            
+            player.x = 50;
+            player.y = 100;
+            player.vx = 0;
+            player.vy = 0;
+            camera.x = 0;
+
+            platforms = [];
+            items = [];
+            
+            // Generación Procedural
+            let currentX = 0;
+            let currentY = 220;
+            worldWidth = 400 + (level * 200); // El mundo crece cada nivel
+
+            // Plataforma inicial segura
+            platforms.push({ x: 0, y: 220, w: 120, h: 60 });
+            currentX = 120;
+
+            while (currentX < worldWidth - 100) {
+                // Gap (hueco)
+                let gap = 40 + Math.random() * 50 + (level * 2);
+                if (gap > 110) gap = 110; 
+                currentX += gap;
+
+                // Nueva plataforma
+                let platW = 40 + Math.random() * 60;
+                // Variación de altura
+                let diffY = (Math.random() - 0.5) * 60;
+                currentY += diffY;
+                
+                // Limitar altura para que sea alcanzable
+                if (currentY < 80) currentY = 80;
+                if (currentY > 240) currentY = 240;
+
+                platforms.push({ x: currentX, y: currentY, w: platW, h: 100 });
+
+                // Colocar item en la plataforma aleatoriamente
+                if (items.length < reqScore && Math.random() > 0.3) {
+                    items.push({
+                        x: currentX + (platW / 2) - 5,
+                        y: currentY - 25,
+                        w: 10,
+                        h: 10,
+                        collected: false
+                    });
+                }
+
+                currentX += platW;
+            }
+
+            // Asegurar que hay suficientes items si la generación falló
+            while(items.length < reqScore) {
+                let p = platforms[Math.floor(Math.random() * platforms.length)];
+                items.push({
+                    x: p.x + (p.w/2) - 5,
+                    y: p.y - 25,
+                    w: 10,
+                    h: 10,
+                    collected: false
+                });
+            }
+
+            // Plataforma final y Salida
+            platforms.push({ x: currentX + 40, y: currentY, w: 100, h: 100 });
+            exit = { x: currentX + 80, y: currentY - 32, w: 24, h: 32, active: false };
+        }
+
+        function update() {
+            if(!gameActive) return;
+
+            // Movimiento lateral
+            if(keys.left) player.vx = -player.speed;
+            else if(keys.right) player.vx = player.speed;
+            else player.vx *= 0.8;
+
+            player.vy += player.gravity;
+            player.x += player.vx;
+            player.y += player.vy;
+
+            // Cámara sigue al jugador
+            // Mantener al jugador centrado pero con límites del mundo
+            let targetCamX = player.x - canvas.width / 2;
+            if (targetCamX < 0) targetCamX = 0;
+            if (targetCamX > worldWidth + 140 - canvas.width) targetCamX = worldWidth + 140 - canvas.width;
+            
+            // Suavizado de cámara (Lerp)
+            camera.x += (targetCamX - camera.x) * 0.1;
+
+            // Colisiones con bordes del mundo
+            if(player.x < 0) player.x = 0;
+
+            // Caída al vacío
+            if(player.y > canvas.height + 50) {
+                die();
+            }
+
+            player.grounded = false;
+            platforms.forEach(p => {
+                // Solo calcular colisiones de plataformas cerca del jugador
+                if (player.x + player.w > p.x && player.x < p.x + p.w) {
+                    if(player.y + player.h > p.y && player.y + player.h < p.y + p.h &&
+                       player.vy >= 0) {
+                        player.grounded = true;
+                        player.vy = 0;
+                        player.y = p.y - player.h;
+                    }
+                }
+            });
+
+            // Recolectar items
+            items.forEach(item => {
+                if(!item.collected && 
+                   player.x < item.x + item.w && player.x + player.w > item.x &&
+                   player.y < item.y + item.h && player.y + player.h > item.y) {
+                    item.collected = true;
+                    score++;
+                    scoreEl.innerText = `${score}/${reqScore}`;
+                    if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+                    if(score >= reqScore) exit.active = true;
+                }
+            });
+
+            // Salida
+            if(exit.active && 
+               player.x < exit.x + exit.w && player.x + player.w > exit.x &&
+               player.y < exit.y + exit.h && player.y + player.h > exit.y) {
+                winLevel();
+            }
+
+            draw();
+            requestAnimationFrame(update);
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#8bab0e';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.save();
+            // Aplicar traslación de cámara
+            ctx.translate(-camera.x, 0);
+
+            // Decoración de fondo procedural (bits flotando)
+            ctx.fillStyle = '#9bbc0f';
+            for(let i=0; i < worldWidth; i+=100) {
+                ctx.fillText("01", i + 20, 50);
+                ctx.fillText("10", i + 80, 150);
+            }
+
+            // Plataformas
+            ctx.fillStyle = '#306230';
+            platforms.forEach(p => {
+                // Solo dibujar si es visible en pantalla
+                if (p.x + p.w > camera.x && p.x < camera.x + canvas.width) {
+                    ctx.fillRect(p.x, p.y, p.w, p.h);
+                    ctx.strokeStyle = '#0f380f';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(p.x, p.y, p.w, p.h);
+                }
+            });
+
+            // Items
+            items.forEach(item => {
+                if(!item.collected && item.x + item.w > camera.x && item.x < camera.x + canvas.width) {
+                    ctx.fillStyle = '#0f380f';
+                    ctx.fillRect(item.x, item.y, item.w, item.h);
+                    ctx.fillStyle = '#9bbc0f';
+                    ctx.fillRect(item.x+2, item.y+2, 3, 3);
+                }
+            });
+
+            // Puerta de salida
+            if(exit.active) {
+                ctx.fillStyle = '#0f380f';
+                ctx.fillRect(exit.x, exit.y, exit.w, exit.h);
+                // Luz de la puerta
+                ctx.fillStyle = (Date.now() % 500 > 250) ? '#9bbc0f' : '#306230';
+                ctx.fillRect(exit.x+4, exit.y+4, exit.w-8, exit.h-8);
+            }
+
+            // Jugador
+            ctx.fillStyle = '#0f380f';
+            ctx.fillRect(player.x, player.y, player.w, player.h);
+            // Detalles del personaje (ojos/visor)
+            ctx.fillStyle = '#9bbc0f';
+            let eyeX = player.vx >= 0 ? player.x + 10 : player.x + 2;
+            ctx.fillRect(eyeX, player.y + 4, 4, 4);
+
+            ctx.restore();
+        }
+
+        function jump() {
+            if(player.grounded) {
+                player.vy = player.jumpPower;
+                player.grounded = false;
+                if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
+            }
+        }
+
+        function winLevel() {
+            level++;
+            if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+            initLevel();
+        }
+
+        function die() {
+            gameActive = false;
+            msgEl.innerHTML = "MEMORIA CORRUPTA<br>ERROR EN NIVEL " + level;
+            backBtn.classList.remove('hidden');
+            overlay.classList.remove('hidden');
+            if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
+        }
+
+        function startGame() {
+            overlay.classList.add('hidden');
+            level = 1;
+            initLevel();
+            gameActive = true;
+            update();
+        }
+
+        function backToMenu() {
+            // Regresar al hub principal
+            window.location.href = 'index.html';
+        }
+
+        // Configuración de controles táctiles mejorada
+        const setupBtn = (id, type) => {
+            const el = document.getElementById(id);
+            const start = (e) => { 
+                e.preventDefault(); 
+                if(type==='jump') jump(); 
+                else keys[type]=true; 
+            };
+            const end = (e) => { 
+                e.preventDefault(); 
+                if(type!=='jump') keys[type]=false; 
+            };
+            el.addEventListener('touchstart', start);
+            el.addEventListener('touchend', end);
+            el.addEventListener('mousedown', start);
+            el.addEventListener('mouseup', end);
+        };
+
+        setupBtn('left', 'left');
+        setupBtn('right', 'right');
+        setupBtn('jump', 'jump');
+
+        window.addEventListener('keydown', e => {
+            if(e.key === 'ArrowLeft') keys.left = true;
+            if(e.key === 'ArrowRight') keys.right = true;
+            if(e.key === ' ' || e.key === 'ArrowUp') jump();
+        });
+        window.addEventListener('keyup', e => {
+            if(e.key === 'ArrowLeft') keys.left = false;
+            if(e.key === 'ArrowRight') keys.right = false;
+        });
+
+        // Loop inicial de dibujo
+        draw();
+    </script>
+</body>
+</html>
