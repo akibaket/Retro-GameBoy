@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Akiba Racer - Akiba-OS</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+        :root {
+            --bg-dark: #0f380f;
+            --screen-green: #9bbc0f;
+            --text-dark: #0f380f;
+            --accent-green: #306230;
+            --font-main: 'Press Start 2P', cursive;
+        }
+
+        * {
+            box-sizing: border-box;
+            image-rendering: pixelated;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+
+        body {
+            background-color: #121212;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            font-family: var(--font-main);
+            color: var(--text-dark);
+            overflow: hidden;
+            touch-action: none;
+        }
+
+        .console-frame {
+            background-color: #333;
+            border: 8px solid #222;
+            border-radius: 15px;
+            padding: 10px;
+            box-shadow: 0 10px 0 #000;
+            position: relative;
+        }
+
+        .screen {
+            background-color: var(--screen-green);
+            border: 4px solid var(--text-dark);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .screen::after {
+            content: "";
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.05) 50%);
+            background-size: 100% 3px;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        .hud {
+            width: 100%;
+            padding: 8px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 8px;
+            border-bottom: 2px solid var(--text-dark);
+            background: var(--screen-green);
+            z-index: 5;
+        }
+
+        canvas {
+            display: block;
+            background-color: #8bab0e;
+        }
+
+        .controls-panel {
+            margin-top: 20px;
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            width: 100%;
+            max-width: 260px;
+        }
+
+        .btn {
+            background-color: #222;
+            border: 4px solid #444;
+            color: #eee;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            height: 70px;
+            flex: 1;
+            border-radius: 15px;
+            cursor: pointer;
+            box-shadow: 0 6px 0 #000;
+        }
+
+        .btn:active {
+            transform: translateY(2px);
+            box-shadow: 0 3px 0 #000;
+            background-color: #111;
+        }
+
+        #overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--screen-green);
+            z-index: 20;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .hidden { display: none !important; }
+        h2 { font-size: 14px; margin-bottom: 20px; line-height: 1.4; }
+
+        .overlay-btns {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            width: 100%;
+            align-items: center;
+        }
+
+        .btn-overlay {
+            padding: 10px; 
+            font-size: 10px; 
+            width: 160px; 
+            height: auto;
+            color: #eee;
+            background-color: #222;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="console-frame">
+        <div class="screen">
+            <div class="hud">
+                <div>SCORE:<br><span id="score">0000</span></div>
+                <div>SPEED:<br><span id="speed-val">0</span>km/h</div>
+            </div>
+
+            <canvas id="gameCanvas" width="240" height="300"></canvas>
+
+            <div id="overlay">
+                <h2 id="msg">AKIBA-RACER</h2>
+                <div class="overlay-btns">
+                    <div class="btn btn-overlay" onclick="startGame()">START</div>
+                    <div id="back-btn" class="btn btn-overlay hidden" style="background-color: #444;" onclick="backToMenu()">BACK TO MENU</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="controls-panel">
+        <div class="btn" id="ctrl-left">←</div>
+        <div class="btn" id="ctrl-right">→</div>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        tg.ready();
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreEl = document.getElementById('score');
+        const speedEl = document.getElementById('speed-val');
+        const msgEl = document.getElementById('msg');
+        const backBtn = document.getElementById('back-btn');
+
+        let score = 0;
+        let gameActive = false;
+        let roadOffset = 0;
+        let speed = 2;
+        let maxSpeed = 8;
+
+        const player = {
+            x: canvas.width / 2 - 15,
+            y: canvas.height - 50,
+            w: 30,
+            h: 40,
+            lane: 1 // 0: Izquierda, 1: Centro, 2: Derecha
+        };
+
+        const lanes = [40, 105, 170]; // Coordenadas X de los carriles
+        let enemies = [];
+        let lastEnemyTime = 0;
+
+        const keys = { left: false, right: false };
+
+        function bindControl(id, action) {
+            const el = document.getElementById(id);
+            const trigger = (e) => { 
+                e.preventDefault(); 
+                action(); 
+                if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light'); 
+            };
+            el.addEventListener('touchstart', trigger);
+            el.addEventListener('mousedown', trigger);
+        }
+
+        bindControl('ctrl-left', () => {
+            if (player.lane > 0) player.lane--;
+        });
+        bindControl('ctrl-right', () => {
+            if (player.lane < 2) player.lane++;
+        });
+
+        window.addEventListener('keydown', e => {
+            if(e.code === 'ArrowLeft') { if(player.lane > 0) player.lane--; }
+            if(e.code === 'ArrowRight') { if(player.lane < 2) player.lane++; }
+        });
+
+        function createEnemy() {
+            const lane = Math.floor(Math.random() * 3);
+            enemies.push({
+                x: lanes[lane],
+                y: -50,
+                w: 30,
+                h: 40,
+                speed: speed * 0.5
+            });
+        }
+
+        function drawCar(x, y, isPlayer) {
+            ctx.fillStyle = isPlayer ? '#0f380f' : '#306230';
+            // Cuerpo principal
+            ctx.fillRect(x + 5, y, 20, 40);
+            // Ruedas
+            ctx.fillStyle = '#0f380f';
+            ctx.fillRect(x, y + 5, 5, 10); // Superior izq
+            ctx.fillRect(x + 25, y + 5, 5, 10); // Superior der
+            ctx.fillRect(x, y + 25, 5, 10); // Inferior izq
+            ctx.fillRect(x + 25, y + 25, 5, 10); // Inferior der
+            // Cabina
+            ctx.fillStyle = isPlayer ? '#8bab0e' : '#9bbc0f';
+            ctx.fillRect(x + 8, y + 15, 14, 10);
+        }
+
+        function drawRoad() {
+            // Fondo asfalto
+            ctx.fillStyle = '#8bab0e';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Bordes de la carretera
+            ctx.fillStyle = '#306230';
+            ctx.fillRect(20, 0, 5, canvas.height);
+            ctx.fillRect(canvas.width - 25, 0, 5, canvas.height);
+
+            // Líneas divisorias (animadas)
+            ctx.fillStyle = '#0f380f';
+            roadOffset += speed;
+            if (roadOffset > 40) roadOffset = 0;
+
+            for (let i = -40; i < canvas.height; i += 40) {
+                ctx.fillRect(85, i + roadOffset, 2, 20);
+                ctx.fillRect(150, i + roadOffset, 2, 20);
+            }
+        }
+
+        function update(time = 0) {
+            if (!gameActive) return;
+
+            // Suavizar movimiento del jugador hacia el carril
+            const targetX = lanes[player.lane];
+            player.x += (targetX - player.x) * 0.2;
+
+            // Generar enemigos
+            if (time - lastEnemyTime > 2000 / (speed/2)) {
+                createEnemy();
+                lastEnemyTime = time;
+            }
+
+            // Mover enemigos y detectar colisiones
+            for (let i = enemies.length - 1; i >= 0; i--) {
+                const e = enemies[i];
+                e.y += speed + 1;
+
+                // Colisión simple por caja (AABB)
+                if (player.x < e.x + e.w && player.x + player.w > e.x &&
+                    player.y < e.y + e.h && player.y + player.h > e.y) {
+                    gameOver();
+                    return;
+                }
+
+                // Puntuación al esquivar
+                if (e.y > canvas.height) {
+                    enemies.splice(i, 1);
+                    score += 10;
+                    scoreEl.innerText = score.toString().padStart(4, '0');
+                    // Aumentar velocidad
+                    if (speed < maxSpeed) speed += 0.05;
+                    speedEl.innerText = Math.floor(speed * 20);
+                }
+            }
+
+            draw();
+            requestAnimationFrame(update);
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawRoad();
+            enemies.forEach(e => drawCar(e.x, e.y, false));
+            drawCar(player.x, player.y, true);
+        }
+
+        function startGame() {
+            document.getElementById('overlay').classList.add('hidden');
+            backBtn.classList.add('hidden');
+            msgEl.innerHTML = "AKIBA-RACER";
+            score = 0;
+            speed = 2;
+            enemies = [];
+            player.lane = 1;
+            player.x = lanes[1];
+            scoreEl.innerText = "0000";
+            speedEl.innerText = "40";
+            gameActive = true;
+            lastEnemyTime = performance.now();
+            update();
+        }
+
+        function gameOver() {
+            gameActive = false;
+            msgEl.innerHTML = "MOTOR FUNDIDO<br>SCORE: " + score;
+            backBtn.classList.remove('hidden');
+            document.getElementById('overlay').classList.remove('hidden');
+            if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
+        }
+
+        function backToMenu() {
+            window.location.href = 'index.html';
+        }
+
+        // Estado inicial
+        draw();
+    </script>
+</body>
+</html>
