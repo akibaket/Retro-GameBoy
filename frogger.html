@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Akiba Frogger - Akiba-OS</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+        :root {
+            --bg-dark: #0f380f;
+            --screen-green: #9bbc0f;
+            --text-dark: #0f380f;
+            --accent-green: #306230;
+            --font-main: 'Press Start 2P', cursive;
+        }
+
+        * {
+            box-sizing: border-box;
+            image-rendering: pixelated;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+
+        body {
+            background-color: #121212;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            font-family: var(--font-main);
+            color: var(--text-dark);
+            overflow: hidden;
+            touch-action: none;
+        }
+
+        .console-frame {
+            background-color: #333;
+            border: 8px solid #222;
+            border-radius: 15px;
+            padding: 10px;
+            box-shadow: 0 10px 0 #000;
+        }
+
+        .screen {
+            background-color: var(--screen-green);
+            border: 4px solid var(--text-dark);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            width: 280px;
+            height: 360px;
+        }
+
+        .screen::after {
+            content: "";
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.05) 50%);
+            background-size: 100% 3px;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        .hud {
+            width: 100%;
+            padding: 6px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 8px;
+            border-bottom: 2px solid var(--text-dark);
+            background: var(--screen-green);
+            z-index: 5;
+        }
+
+        canvas { display: block; background-color: #8bab0e; }
+
+        .dpad {
+            margin-top: 15px;
+            display: grid;
+            grid-template-areas: 
+                ". up ."
+                "left . right"
+                ". down .";
+            gap: 10px;
+        }
+
+        .btn-dir {
+            width: 50px;
+            height: 50px;
+            background: #222;
+            border: 4px solid #444;
+            color: #eee;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 0 #000;
+        }
+
+        .btn-dir:active {
+            transform: translateY(2px);
+            box-shadow: 0 2px 0 #000;
+            background: #111;
+        }
+
+        .up { grid-area: up; }
+        .down { grid-area: down; }
+        .left { grid-area: left; }
+        .right { grid-area: right; }
+
+        #overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--screen-green);
+            z-index: 20;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .hidden { display: none !important; }
+        h2 { font-size: 10px; margin-bottom: 15px; line-height: 1.4; }
+
+        .btn-overlay {
+            padding: 10px; font-size: 10px; width: 160px;
+            color: #eee; background: #222; border: 4px solid #444;
+            border-radius: 8px; font-family: var(--font-main);
+            margin-bottom: 10px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="console-frame">
+        <div class="screen">
+            <div class="hud">
+                <div>SCORE: <span id="score">00</span></div>
+                <div>LVL: <span id="level">1</span></div>
+            </div>
+            <canvas id="gameCanvas" width="280" height="320"></canvas>
+            <div id="overlay">
+                <h2 id="msg">AKIBA-FROGGER<br>V.1.1 - EQUILIBRADO</h2>
+                <div class="overlay-btns">
+                    <div class="btn-overlay" onclick="startGame()">CONECTAR</div>
+                    <div id="back-btn" class="btn-overlay hidden" style="background-color: #444;" onclick="backToMenu()">MENU</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="dpad">
+        <div class="btn-dir up" id="up">↑</div>
+        <div class="btn-dir left" id="left">←</div>
+        <div class="btn-dir right" id="right">→</div>
+        <div class="btn-dir down" id="down">↓</div>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        tg.ready();
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreEl = document.getElementById('score');
+        const levelEl = document.getElementById('level');
+        const msgEl = document.getElementById('msg');
+        const backBtn = document.getElementById('back-btn');
+        const overlay = document.getElementById('overlay');
+
+        const grid = 32;
+        let score = 0;
+        let level = 1;
+        let gameActive = false;
+
+        const frog = {
+            x: grid * 4,
+            y: grid * 9,
+            w: grid - 4,
+            h: grid - 4
+        };
+
+        let obstacles = [];
+        // Base de filas
+        const rows = [
+            { y: grid * 1, baseSpeed: -0.6, type: 'log' },
+            { y: grid * 2, baseSpeed: 0.8, type: 'log' },
+            { y: grid * 3, baseSpeed: -0.5, type: 'log' },
+            { y: grid * 5, baseSpeed: 1.0, type: 'car' },
+            { y: grid * 6, baseSpeed: -0.8, type: 'car' },
+            { y: grid * 7, baseSpeed: 1.2, type: 'car' }
+        ];
+
+        function initObstacles() {
+            obstacles = [];
+            // La cantidad de obstáculos aumenta gradualmente (Nivel 1: 1, Nivel 2: 2, Nivel 3+: 3)
+            const countPerLane = Math.min(3, Math.ceil(level / 2));
+            const speedMultiplier = 1 + (level - 1) * 0.1; // Sube 10% por nivel
+
+            rows.forEach(row => {
+                for(let i = 0; i < countPerLane; i++) {
+                    obstacles.push({
+                        x: i * (canvas.width / countPerLane) + (Math.random() * 20),
+                        y: row.y,
+                        w: row.type === 'log' ? grid * 1.8 : grid * 0.9,
+                        h: grid - 6,
+                        speed: row.baseSpeed * speedMultiplier,
+                        type: row.type
+                    });
+                }
+            });
+        }
+
+        function move(dir) {
+            if(!gameActive) return;
+            if(dir === 'up' && frog.y > 0) frog.y -= grid;
+            if(dir === 'down' && frog.y < grid * 9) frog.y += grid;
+            if(dir === 'left' && frog.x > 0) frog.x -= grid;
+            if(dir === 'right' && frog.x < grid * 8) frog.x += grid;
+            
+            if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+
+            if(frog.y < grid) {
+                winLevel();
+            }
+        }
+
+        function winLevel() {
+            level++;
+            score += 100;
+            scoreEl.innerText = score.toString().padStart(2, '0');
+            levelEl.innerText = level;
+            frog.x = grid * 4;
+            frog.y = grid * 9;
+            initObstacles();
+            if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+        }
+
+        function gameOver() {
+            gameActive = false;
+            msgEl.innerHTML = "SISTEMA BLOQUEADO<br>NIVEL: " + level + "<br>PUNTOS: " + score;
+            backBtn.classList.remove('hidden');
+            overlay.classList.remove('hidden');
+            if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
+        }
+
+        function update() {
+            if(!gameActive) return;
+
+            let onLog = false;
+            obstacles.forEach(o => {
+                o.x += o.speed;
+                // Ajuste de bordes infinito
+                if(o.speed > 0 && o.x > canvas.width) o.x = -o.w;
+                if(o.speed < 0 && o.x + o.w < 0) o.x = canvas.width;
+
+                // Colisiones exactas
+                if (frog.x < o.x + o.w && frog.x + frog.w > o.x &&
+                    frog.y < o.y + o.h && frog.y + frog.h > o.y) {
+                    if(o.type === 'car') {
+                        gameOver();
+                    } else if(o.type === 'log') {
+                        onLog = true;
+                        frog.x += o.speed;
+                    }
+                }
+            });
+
+            // Lógica del río (Zona de peligro entre meta y descanso)
+            if(frog.y >= grid * 1 && frog.y <= grid * 3 && !onLog) {
+                gameOver();
+            }
+
+            // Salirse de la pantalla por estar encima de un log
+            if(frog.x < -10 || frog.x > canvas.width - frog.w + 10) {
+                gameOver();
+            }
+
+            draw();
+            requestAnimationFrame(update);
+        }
+
+        function draw() {
+            ctx.fillStyle = '#8bab0e';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Zonas
+            ctx.fillStyle = '#9bbc0f'; // Meta
+            ctx.fillRect(0, 0, canvas.width, grid);
+            
+            ctx.fillStyle = '#306230'; // Agua/Río
+            ctx.globalAlpha = 0.2;
+            ctx.fillRect(0, grid, canvas.width, grid * 3.5);
+            ctx.globalAlpha = 1.0;
+
+            ctx.fillStyle = '#9bbc0f'; // Descanso
+            ctx.fillRect(0, grid * 4.5, canvas.width, grid);
+
+            // Obstáculos
+            obstacles.forEach(o => {
+                ctx.fillStyle = o.type === 'car' ? '#0f380f' : '#306230';
+                ctx.fillRect(o.x, o.y + 3, o.w, o.h);
+                // Detalle pixelado
+                ctx.fillStyle = '#8bab0e';
+                ctx.fillRect(o.x + 4, o.y + 6, o.w - 8, 2);
+            });
+
+            // Jugador
+            ctx.fillStyle = '#0f380f';
+            ctx.fillRect(frog.x + 4, frog.y + 4, frog.w - 8, frog.h - 8);
+            ctx.fillStyle = '#9bbc0f';
+            ctx.fillRect(frog.x + 8, frog.y + 8, 4, 4);
+        }
+
+        function startGame() {
+            overlay.classList.add('hidden');
+            score = 0; level = 1;
+            scoreEl.innerText = "00";
+            levelEl.innerText = "1";
+            frog.x = grid * 4;
+            frog.y = grid * 9;
+            initObstacles();
+            gameActive = true;
+            update();
+        }
+
+        function backToMenu() { window.location.href = 'index.html'; }
+
+        ['up', 'down', 'left', 'right'].forEach(id => {
+            const el = document.getElementById(id);
+            const action = (e) => { e.preventDefault(); move(id); };
+            el.addEventListener('touchstart', action);
+            el.addEventListener('mousedown', action);
+        });
+
+        window.addEventListener('keydown', e => {
+            if(e.key === 'ArrowUp') move('up');
+            if(e.key === 'ArrowDown') move('down');
+            if(e.key === 'ArrowLeft') move('left');
+            if(e.key === 'ArrowRight') move('right');
+        });
+
+        draw();
+    </script>
+</body>
+</html>
