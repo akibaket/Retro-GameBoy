@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Tetris Retro - Akiba-OS</title>
+    <title>Tetris</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
@@ -112,9 +112,9 @@
         }
 
         .btn-rotate { grid-column: 2; }
-        .btn-left { grid-column: 1; grid-row: 2; }
+        .btn-left { grid-column: 1; grid-row: 2; transform: rotate(-90deg);}
         .btn-down { grid-column: 2; grid-row: 2; }
-        .btn-right { grid-column: 3; grid-row: 2; }
+        .btn-right { grid-column: 3; grid-row: 2; transform: rotate(90deg);}
 
         #overlay {
             position: absolute;
@@ -161,7 +161,7 @@
             <canvas id="tetris" width="200" height="360"></canvas>
 
             <div id="overlay">
-                <h2 id="msg">AKIBA-TETRIS<br>READY?</h2>
+                <h2 id="msg">TETRIS<br>READY?</h2>
                 <div class="overlay-btns">
                     <div class="btn btn-overlay" onclick="startGame()">START</div>
                     <div id="back-btn" class="btn btn-overlay hidden" style="background-color: #444;" onclick="backToMenu()">BACK TO MENU</div>
@@ -172,9 +172,9 @@
 
     <div class="controls-panel">
         <div class="btn btn-rotate" id="ctrl-up">↻</div>
-        <div class="btn btn-left" id="ctrl-left">←</div>
+        <div class="btn btn-left" id="ctrl-left">↓</div>
         <div class="btn btn-down" id="ctrl-down">↓</div>
-        <div class="btn btn-right" id="ctrl-right">→</div>
+        <div class="btn btn-right" id="ctrl-right">↓</div>
     </div>
 
     <script>
