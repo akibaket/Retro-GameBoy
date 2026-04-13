@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Akiba Runner - Akiba-OS</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+        :root {
+            --bg-dark: #0f380f;
+            --screen-green: #9bbc0f;
+            --text-dark: #0f380f;
+            --accent-green: #306230;
+            --font-main: 'Press Start 2P', cursive;
+        }
+
+        * {
+            box-sizing: border-box;
+            image-rendering: pixelated;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+
+        body {
+            background-color: #121212;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            font-family: var(--font-main);
+            color: var(--text-dark);
+            overflow: hidden;
+            touch-action: none;
+        }
+
+        .console-frame {
+            background-color: #333;
+            border: 8px solid #222;
+            border-radius: 15px;
+            padding: 10px;
+            box-shadow: 0 10px 0 #000;
+            position: relative;
+        }
+
+        .screen {
+            background-color: var(--screen-green);
+            border: 4px solid var(--text-dark);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .screen::after {
+            content: "";
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.05) 50%);
+            background-size: 100% 3px;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        .hud {
+            width: 100%;
+            padding: 8px;
+            display: flex;
+            justify-content: space-between;
+            font-size: 8px;
+            border-bottom: 2px solid var(--text-dark);
+            background: var(--screen-green);
+            z-index: 5;
+        }
+
+        canvas {
+            display: block;
+            background-color: #8bab0e;
+        }
+
+        /* Controls */
+        .controls-panel {
+            margin-top: 20px;
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            width: 100%;
+            max-width: 260px;
+        }
+
+        .btn {
+            background-color: #222;
+            border: 4px solid #444;
+            color: #eee;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            height: 70px;
+            flex: 1;
+            border-radius: 15px;
+            cursor: pointer;
+            box-shadow: 0 6px 0 #000;
+            font-family: var(--font-main);
+        }
+
+        .btn:active {
+            transform: translateY(2px);
+            box-shadow: 0 3px 0 #000;
+            background-color: #111;
+        }
+
+        #overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--screen-green);
+            z-index: 20;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .hidden { display: none !important; }
+        h2 { font-size: 14px; margin-bottom: 20px; line-height: 1.4; }
+
+        .overlay-btns {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            width: 100%;
+            align-items: center;
+        }
+
+        .btn-overlay {
+            padding: 10px; 
+            font-size: 10px; 
+            width: 160px; 
+            height: auto;
+            color: #eee;
+            background-color: #222;
+            border: 4px solid #444;
+            border-radius: 8px;
+            font-family: var(--font-main);
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="console-frame">
+        <div class="screen">
+            <div class="hud">
+                <div>DIST:<br><span id="score">00000</span></div>
+                <div>HI:<br><span id="max-score">00000</span></div>
+            </div>
+
+            <canvas id="gameCanvas" width="240" height="280"></canvas>
+
+            <div id="overlay">
+                <h2 id="msg">AKIBA-RUNNER</h2>
+                <div class="overlay-btns">
+                    <div class="btn-overlay" onclick="startGame()">START</div>
+                    <div id="back-btn" class="btn-overlay hidden" style="background-color: #444;" onclick="backToMenu()">BACK TO MENU</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="controls-panel">
+        <div class="btn" id="ctrl-duck">AGACHAR</div>
+        <div class="btn" id="ctrl-jump" style="background-color: #a00; border-color: #600;">SALTAR</div>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        tg.ready();
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreEl = document.getElementById('score');
+        const maxScoreEl = document.getElementById('max-score');
+        const msgEl = document.getElementById('msg');
+        const backBtn = document.getElementById('back-btn');
+
+        let score = 0;
+        let maxScore = 0;
+        let gameActive = false;
+        let gameSpeed = 3.5;
+        let frameCount = 0;
+
+        // Entorno
+        const groundY = 220;
+        let bgOffset = 0;
+        let buildings = [];
+
+        // Inicializar edificios del fondo parallax
+        for(let i=0; i<10; i++) {
+            buildings.push({
+                x: i * 40,
+                w: 20 + Math.random() * 30,
+                h: 40 + Math.random() * 80
+            });
+        }
+
+        const gravity = 0.5;
+        const jumpPower = -7.5;
+
+        let player = {
+            x: 30,
+            y: groundY - 24,
+            w: 16,
+            h: 24,
+            dy: 0,
+            isJumping: false,
+            isDucking: false
+        };
+
+        let obstacles = [];
+
+        const keys = { jump: false, duck: false };
+
+        function bindControl(id, key, action) {
+            const el = document.getElementById(id);
+            const start = (e) => { 
+                e.preventDefault(); 
+                keys[key] = true; 
+                action();
+            };
+            const end = (e) => { 
+                e.preventDefault(); 
+                keys[key] = false; 
+                if(key === 'duck' && !player.isJumping) standUp();
+            };
+            el.addEventListener('touchstart', start, {passive: false});
+            el.addEventListener('touchend', end, {passive: false});
+            el.addEventListener('mousedown', start);
+            el.addEventListener('mouseup', end);
+            el.addEventListener('mouseleave', end);
+        }
+
+        function jump() {
+            if (!gameActive) return;
+            if (!player.isJumping && !player.isDucking) {
+                player.dy = jumpPower;
+                player.isJumping = true;
+                if(tg.HapticFeedback) tg.HapticFeedback.impactOccurred('medium');
+            }
+        }
+
+        function duck() {
+            if (!gameActive) return;
+            if (!player.isJumping) {
+                player.isDucking = true;
+                player.h = 12;
+                player.y = groundY - player.h;
+            }
+        }
+
+        function standUp() {
+            if (!player.isJumping) {
+                player.isDucking = false;
+                player.h = 24;
+                player.y = groundY - player.h;
+            }
+        }
+
+        bindControl('ctrl-jump', 'jump', jump);
+        bindControl('ctrl-duck', 'duck', duck);
+
+        window.addEventListener('keydown', e => {
+            if(e.code === 'ArrowUp' || e.code === 'Space') { keys.jump = true; jump(); }
+            if(e.code === 'ArrowDown') { keys.duck = true; duck(); }
+        });
+        window.addEventListener('keyup', e => {
+            if(e.code === 'ArrowUp' || e.code === 'Space') keys.jump = false;
+            if(e.code === 'ArrowDown') { keys.duck = false; standUp(); }
+        });
+
+        function spawnObstacle() {
+            // 0 = Suelo, 1 = Aire
+            const type = Math.random() > 0.5 ? 1 : 0;
+            let obs = {
+                x: canvas.width,
+                w: type === 0 ? 16 : 20,
+                h: type === 0 ? 20 : 12,
+                type: type
+            };
+            
+            if (type === 0) {
+                obs.y = groundY - obs.h; // En el suelo
+            } else {
+                obs.y = groundY - 32; // En el aire (requiere agacharse)
+            }
+            obstacles.push(obs);
+        }
+
+        function update() {
+            if (!gameActive) return;
+
+            frameCount++;
+            
+            // Incrementar dificultad y puntuación
+            gameSpeed += 0.002;
+            if (frameCount % 5 === 0) {
+                score++;
+                scoreEl.innerText = score.toString().padStart(5, '0');
+            }
+
+            // Parallax del fondo
+            bgOffset -= gameSpeed * 0.3;
+            if (bgOffset <= -40) {
+                bgOffset = 0;
+                buildings.shift();
+                buildings.push({
+                    x: buildings[buildings.length-1].x + 40,
+                    w: 20 + Math.random() * 30,
+                    h: 40 + Math.random() * 80
+                });
+            }
+
+            // Física del jugador
+            player.dy += gravity;
+            player.y += player.dy;
+
+            if (player.y >= groundY - player.h) {
+                player.y = groundY - player.h;
+                player.dy = 0;
+                player.isJumping = false;
+                
+                // Si la tecla de agacharse sigue pulsada al aterrizar
+                if (keys.duck) duck();
+                else standUp();
+            }
+
+            // Spawner de obstáculos
+            // El spawn es más frecuente a medida que aumenta la velocidad
+            const spawnRate = Math.max(60, 120 - Math.floor(gameSpeed * 10));
+            if (frameCount % spawnRate === 0) {
+                spawnObstacle();
+            }
+
+            // Actualizar obstáculos
+            for (let i = obstacles.length - 1; i >= 0; i--) {
+                let obs = obstacles[i];
+                obs.x -= gameSpeed;
+
+                // Colisión (AABB)
+                // Reducimos un poco la "caja" (hitbox) para que sea más justo
+                let hitboxMargin = 2;
+                if (
+                    player.x + hitboxMargin < obs.x + obs.w - hitboxMargin &&
+                    player.x + player.w - hitboxMargin > obs.x + hitboxMargin &&
+                    player.y + hitboxMargin < obs.y + obs.h - hitboxMargin &&
+                    player.y + player.h - hitboxMargin > obs.y + hitboxMargin
+                ) {
+                    gameOver();
+                    return;
+                }
+
+                if (obs.x + obs.w < 0) {
+                    obstacles.splice(i, 1);
+                }
+            }
+
+            draw();
+            requestAnimationFrame(update);
+        }
+
+        function draw() {
+            // Limpiar fondo
+            ctx.fillStyle = '#8bab0e';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Dibujar ciudad (Fondo)
+            ctx.fillStyle = '#9bbc0f';
+            buildings.forEach(b => {
+                ctx.fillRect(b.x + bgOffset, groundY - b.h, b.w, b.h);
+            });
+
+            // Dibujar suelo
+            ctx.fillStyle = '#306230';
+            ctx.fillRect(0, groundY, canvas.width, canvas.height - groundY);
+            // Línea superior del suelo
+            ctx.fillStyle = '#0f380f';
+            ctx.fillRect(0, groundY, canvas.width, 4);
+
+            // Animación de correr del suelo (pequeñas marcas)
+            ctx.fillStyle = '#8bab0e';
+            for(let i=0; i<canvas.width; i+=30) {
+                ctx.fillRect(i - (frameCount * gameSpeed) % 30, groundY + 8, 10, 2);
+            }
+
+            // Dibujar obstáculos
+            ctx.fillStyle = '#0f380f';
+            obstacles.forEach(obs => {
+                ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+                if (obs.type === 1) { // Dron volador
+                    ctx.fillStyle = '#9bbc0f';
+                    ctx.fillRect(obs.x + 4, obs.y + 4, 4, 4); // "Ojo" del dron
+                    ctx.fillStyle = '#0f380f';
+                }
+            });
+
+            // Dibujar Jugador
+            ctx.fillStyle = '#0f380f';
+            ctx.fillRect(player.x, player.y, player.w, player.h);
+            
+            // Detalles del jugador
+            ctx.fillStyle = '#9bbc0f';
+            if (player.isDucking) {
+                // Ojo cuando está agachado
+                ctx.fillRect(player.x + 16, player.y + 4, 4, 4); 
+            } else {
+                // Ojo normal
+                ctx.fillRect(player.x + 8, player.y + 4, 4, 4);
+                // Animación de piernas si está corriendo
+                if (!player.isJumping && (Math.floor(frameCount / 6) % 2 === 0)) {
+                    ctx.fillStyle = '#8bab0e';
+                    ctx.fillRect(player.x + 4, player.y + player.h - 4, 8, 4); // "Corte" entre las piernas
+                }
+            }
+        }
+
+        function startGame() {
+            document.getElementById('overlay').classList.add('hidden');
+            backBtn.classList.add('hidden');
+            msgEl.innerHTML = "AKIBA-RUNNER";
+            
+            score = 0;
+            scoreEl.innerText = "00000";
+            gameSpeed = 3.5;
+            frameCount = 0;
+            
+            player.y = groundY - 24;
+            player.dy = 0;
+            player.isJumping = false;
+            standUp(); // Asegurar estado inicial
+
+            obstacles = [];
+            gameActive = true;
+            update();
+        }
+
+        function gameOver() {
+            gameActive = false;
+            if (score > maxScore) maxScore = score;
+            maxScoreEl.innerText = maxScore.toString().padStart(5, '0');
+            
+            msgEl.innerHTML = "COLISION<br>SCORE: " + score;
+            backBtn.classList.remove('hidden');
+            document.getElementById('overlay').classList.remove('hidden');
+            
+            if(tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
+        }
+
+        function backToMenu() {
+            window.location.href = 'index.html';
+        }
+
+        // Render inicial
+        draw();
+    </script>
+</body>
+</html>
