@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Akiba Galaxia - Akiba-OS</title>
+    <title>Galaxian</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
@@ -162,7 +162,7 @@
             <canvas id="gameCanvas" width="240" height="320"></canvas>
 
             <div id="overlay">
-                <h2 id="msg">AKIBA-GALAXIA</h2>
+                <h2 id="msg">GALAXIAN</h2>
                 <div class="overlay-btns">
                     <div class="btn btn-overlay" onclick="startGame()">START</div>
                     <div id="back-btn" class="btn btn-overlay hidden" style="background-color: #444;" onclick="backToMenu()">BACK TO MENU</div>
@@ -383,7 +383,7 @@
         function startGame() {
             document.getElementById('overlay').classList.add('hidden');
             backBtn.classList.add('hidden');
-            msgEl.innerHTML = "AKIBA-GALAXIA";
+            msgEl.innerHTML = "GALAXIAN";
             score = 0;
             wave = 1;
             scoreEl.innerText = "000000";
